@@ -1,0 +1,22 @@
+# Local development PostgreSQL only (binds to localhost 127.0.0.1:5432)
+services:
+  postgres:
+    image: postgres:17.4-alpine
+    container_name: portfolio-survey-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-survey_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_local_password_hex_0123456789abcdef}
+      POSTGRES_DB: ${POSTGRES_DB:-portfolio_survey}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - portfolio_survey_dev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-survey_app} -d ${POSTGRES_DB:-portfolio_survey}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  portfolio_survey_dev_pgdata:

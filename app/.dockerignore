@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+.git
+.env
+.env.*
+*.log
+*.dump
+*.sql.gz
+coverage
+playwright-report
+test-results

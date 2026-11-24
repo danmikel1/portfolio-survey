@@ -1,0 +1,53 @@
+// Prisma 7 PostgreSQL schema — RA 10173 PII-separated survey architecture
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Anonymous market-research responses stored as versioned JSONB keyed by stable question IDs.
+/// Never stores respondent IP addresses or personal contact details.
+model SurveyResponse {
+  id                String   @id @default(cuid())
+  surveyVersion     String   @map("survey_version") @db.VarChar(32)
+  submittedAt       DateTime @default(now()) @map("submitted_at") @db.Timestamptz(3)
+  completionSeconds Int?     @map("completion_seconds")
+  answers           Json
+  metadata          Json?
+
+  @@index([surveyVersion, submittedAt(sort: Desc)])
+  @@map("survey_responses")
+}
+
+/// Optional follow-up contact records strictly separated from survey_responses (no FK coupling).
+/// Written only when respondent answers Yes/Maybe on Q20 AND grants explicit RA 10173 consent.
+model FollowUpContact {
+  id                   String   @id @default(cuid())
+  surveyVersion        String   @map("survey_version") @db.VarChar(32)
+  availability         String   @db.VarChar(16)
+  name                 String?  @db.VarChar(160)
+  contact              String   @db.VarChar(255)
+  consentGiven         Boolean  @map("consent_given")
+  consentTimestamp     DateTime @map("consent_timestamp") @db.Timestamptz(3)
+  privacyNoticeVersion String   @map("privacy_notice_version") @db.VarChar(32)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([createdAt(sort: Desc)])
+  @@map("follow_up_contacts")
+}
+
+/// Optional anonymous funnel telemetry keyed by ephemeral client-generated session token.
+model SurveyEvent {
+  id            String   @id @default(cuid())
+  sessionToken  String   @map("session_token") @db.VarChar(64)
+  surveyVersion String   @map("survey_version") @db.VarChar(32)
+  eventType     String   @map("event_type") @db.VarChar(32)
+  step          Int?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([surveyVersion, eventType, createdAt(sort: Desc)])
+  @@map("survey_events")
+}

@@ -1,0 +1,85 @@
+# Production Docker Compose for TrueNAS SCALE Custom App / Compose workflow
+# IMPORTANT:
+# 1. Inspect /mnt/ssd-storage/apps in TrueNAS Storage -> Datasets BEFORE creating child datasets.
+# 2. Pin exact image tags or SHA256 digests before deploying to production.
+# 3. Never expose PostgreSQL ports publicly; keep DB isolated on the internal backend network.
+
+services:
+  web:
+    image: ${APP_IMAGE:-ghcr.io/your-github-username/portfolio-survey:v1.0.0}
+    container_name: portfolio-survey-web
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
+      SURVEY_VERSION: ${SURVEY_VERSION:-v1.0.0}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_HOSTNAMES: ${TURNSTILE_HOSTNAMES:-}
+    networks:
+      - frontend
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  postgres:
+    image: postgres:17.4-alpine
+    container_name: portfolio-survey-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-survey_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-portfolio_survey}
+    volumes:
+      # Create dataset ONLY after confirming /mnt/ssd-storage/apps layout & ACL type in TrueNAS UI
+      - ${POSTGRES_DATA_DIR:-/mnt/ssd-storage/apps/portfolio-survey/postgres}:/var/lib/postgresql/data
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-survey_app} -d ${POSTGRES_DB:-portfolio_survey}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  cloudflared:
+    image: cloudflare/cloudflared:2025.4.0
+    container_name: portfolio-survey-cloudflared
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - frontend
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
